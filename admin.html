@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админка - Подкаст Сервис</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        .admin-section {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">
+                <i class="bi bi-mic"></i> Подкаст Сервис - Админка
+            </a>
+        </div>
+    </nav>
+
+    <div id="login-section" class="login-container">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title text-center mb-4">Вход в админку</h3>
+                <form id="login-form">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Логин</label>
+                        <input type="text" class="form-control" id="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Пароль</label>
+                        <input type="password" class="form-control" id="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Войти</button>
+                </form>
+                <div id="login-error" class="alert alert-danger mt-3" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="admin-section" class="admin-section container my-5">
+        <div class="row">
+            <div class="col-md-6">
+                <h3>Управление подкастами</h3>
+                <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addPodcastModal">
+                    <i class="bi bi-plus-circle"></i> Добавить подкаст
+                </button>
+                <div id="podcasts-list"></div>
+            </div>
+            <div class="col-md-6">
+                <h3>Управление эпизодами</h3>
+                <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addEpisodeModal">
+                    <i class="bi bi-plus-circle"></i> Добавить эпизод
+                </button>
+                <div id="episodes-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="addPodcastModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить подкаст</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-podcast-form">
+                        <div class="mb-3">
+                            <label class="form-label">Название</label>
+                            <input type="text" class="form-control" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Автор</label>
+                            <input type="text" class="form-control" name="author">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Добавить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="addEpisodeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить эпизод</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-episode-form">
+                        <div class="mb-3">
+                            <label class="form-label">Подкаст</label>
+                            <select class="form-control" name="podcast_id" id="podcast-select" required></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Название</label>
+                            <input type="text" class="form-control" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">URL аудио файла</label>
+                            <input type="text" class="form-control" name="audio_file" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Номер эпизода</label>
+                            <input type="number" class="form-control" name="episode_number" value="1">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Добавить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function checkAuth() {
+            const isLoggedIn = sessionStorage.getItem('admin_logged_in');
+            if (isLoggedIn === 'true') {
+                showAdminSection();
+            }
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    sessionStorage.setItem('admin_logged_in', 'true');
+                    showAdminSection();
+                } else {
+                    document.getElementById('login-error').style.display = 'block';
+                    document.getElementById('login-error').textContent = data.message || 'Ошибка входа';
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+            }
+        });
+
+        function showAdminSection() {
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('admin-section').style.display = 'block';
+            loadPodcasts();
+            loadEpisodes();
+        }
+
+        async function loadPodcasts() {
+            try {
+                const response = await fetch('/api/podcasts');
+                const podcasts = await response.json();
+                
+                const container = document.getElementById('podcasts-list');
+                container.innerHTML = '';
+                
+                podcasts.forEach(podcast => {
+                    const div = document.createElement('div');
+                    div.className = 'card mb-2';
+                    div.innerHTML = `
+                        <div class="card-body">
+                            <h5>${podcast.title}</h5>
+                            <p class="text-muted">${podcast.description || 'Нет описания'}</p>
+                            <button class="btn btn-sm btn-danger" onclick="deletePodcast(${podcast.id})">Удалить</button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+
+                const select = document.getElementById('podcast-select');
+                select.innerHTML = '<option value="">Выберите подкаст</option>';
+                podcasts.forEach(podcast => {
+                    const option = document.createElement('option');
+                    option.value = podcast.id;
+                    option.textContent = podcast.title;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки подкастов:', error);
+            }
+        }
+
+        async function loadEpisodes() {
+            try {
+                const response = await fetch('/api/episodes');
+                const episodes = await response.json();
+                
+                const container = document.getElementById('episodes-list');
+                container.innerHTML = '';
+                
+                episodes.forEach(episode => {
+                    const div = document.createElement('div');
+                    div.className = 'card mb-2';
+                    div.innerHTML = `
+                        <div class="card-body">
+                            <h5>${episode.title}</h5>
+                            <p class="text-muted">${episode.podcast_title}</p>
+                            <button class="btn btn-sm btn-danger" onclick="deleteEpisode(${episode.id})">Удалить</button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки эпизодов:', error);
+            }
+        }
+
+        document.getElementById('add-podcast-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch('/api/podcasts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('addPodcastModal')).hide();
+                    e.target.reset();
+                    loadPodcasts();
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+            }
+        });
+
+        document.getElementById('add-episode-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            data.podcast_id = parseInt(data.podcast_id);
+            data.episode_number = parseInt(data.episode_number);
+
+            try {
+                const response = await fetch('/api/episodes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('addEpisodeModal')).hide();
+                    e.target.reset();
+                    loadEpisodes();
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+            }
+        });
+
+        async function deletePodcast(id) {
+            if (confirm('Удалить подкаст?')) {
+                try {
+                    await fetch(`/api/podcasts/${id}`, { method: 'DELETE' });
+                    loadPodcasts();
+                    loadEpisodes();
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                }
+            }
+        }
+
+        async function deleteEpisode(id) {
+            if (confirm('Удалить эпизод?')) {
+                try {
+                    await fetch(`/api/episodes/${id}`, { method: 'DELETE' });
+                    loadEpisodes();
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                }
+            }
+        }
+
+        checkAuth();
+    </script>
+</body>
+</html>
+

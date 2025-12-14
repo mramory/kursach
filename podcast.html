@@ -54,8 +54,26 @@
         <div id="podcast-info" class="mb-4">
         </div>
         
-        <h3 class="mb-4">Эпизоды</h3>
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="search-input" 
+                           placeholder="Поиск эпизодов по названию или описанию..." 
+                           onkeyup="handleSearch(event)">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()">
+                        <i class="bi bi-x-circle"></i> Очистить
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <h3 class="mb-4" id="episodes-title">Эпизоды</h3>
         <div id="episodes-list">
+        </div>
+        <div id="no-results" class="text-center text-muted" style="display: none;">
+            <i class="bi bi-search" style="font-size: 2rem;"></i>
+            <p class="mt-3">Эпизоды не найдены. Попробуйте изменить запрос.</p>
         </div>
     </div>
 
@@ -71,12 +89,16 @@
         const urlParams = new URLSearchParams(window.location.search);
         const podcastId = urlParams.get('id');
         
+        let currentPodcast = null;
+        let searchTimeout;
+        
         async function loadPodcast() {
             try {
                 const response = await fetch(`/api/podcasts/${podcastId}`);
                 const podcast = await response.json();
                 
                 if (podcast) {
+                    currentPodcast = podcast;
                     document.getElementById('podcast-info').innerHTML = `
                         <div class="card">
                             <div class="card-body">
@@ -87,26 +109,83 @@
                         </div>
                     `;
                     
-                    const episodesList = document.getElementById('episodes-list');
-                    if (podcast.episodes && podcast.episodes.length > 0) {
-                        podcast.episodes.forEach(episode => {
-                            const episodeDiv = document.createElement('div');
-                            episodeDiv.className = 'episode-item';
-                            episodeDiv.innerHTML = `
-                                <h5>${episode.title}</h5>
-                                <p>${episode.description || 'Нет описания'}</p>
-                                <small class="text-muted">Эпизод #${episode.episode_number || 'N/A'}</small>
-                            `;
-                            episodeDiv.onclick = () => playEpisode(episode);
-                            episodesList.appendChild(episodeDiv);
-                        });
-                    } else {
-                        episodesList.innerHTML = '<p class="text-muted">Эпизоды пока не добавлены</p>';
-                    }
+                    loadEpisodes();
                 }
             } catch (error) {
                 console.error('Ошибка загрузки подкаста:', error);
             }
+        }
+        
+        async function loadEpisodes(searchQuery = '') {
+            try {
+                let episodes;
+                if (searchQuery) {
+                    const response = await fetch(`/api/search/episodes/${podcastId}?q=${encodeURIComponent(searchQuery)}`);
+                    episodes = await response.json();
+                } else {
+                    if (currentPodcast && currentPodcast.episodes) {
+                        episodes = currentPodcast.episodes;
+                    } else {
+                        const response = await fetch(`/api/podcasts/${podcastId}`);
+                        const podcast = await response.json();
+                        episodes = podcast.episodes || [];
+                    }
+                }
+                
+                displayEpisodes(episodes);
+            } catch (error) {
+                console.error('Ошибка загрузки эпизодов:', error);
+            }
+        }
+        
+        function displayEpisodes(episodes) {
+            const episodesList = document.getElementById('episodes-list');
+            const noResults = document.getElementById('no-results');
+            const episodesTitle = document.getElementById('episodes-title');
+            
+            episodesList.innerHTML = '';
+            
+            if (!episodes || episodes.length === 0) {
+                episodesList.style.display = 'none';
+                noResults.style.display = 'block';
+            } else {
+                episodesList.style.display = 'block';
+                noResults.style.display = 'none';
+                
+                episodes.forEach(episode => {
+                    const episodeDiv = document.createElement('div');
+                    episodeDiv.className = 'episode-item';
+                    episodeDiv.innerHTML = `
+                        <h5>${episode.title}</h5>
+                        <p>${episode.description || 'Нет описания'}</p>
+                        <small class="text-muted">Эпизод #${episode.episode_number || 'N/A'}</small>
+                    `;
+                    episodeDiv.onclick = () => playEpisode(episode);
+                    episodesList.appendChild(episodeDiv);
+                });
+            }
+            
+            const searchInput = document.getElementById('search-input');
+            if (searchInput && searchInput.value) {
+                episodesTitle.textContent = `Эпизоды: "${searchInput.value}"`;
+            } else {
+                episodesTitle.textContent = 'Эпизоды';
+            }
+        }
+        
+        function handleSearch(event) {
+            clearTimeout(searchTimeout);
+            const query = event.target.value.trim();
+            
+            searchTimeout = setTimeout(() => {
+                loadEpisodes(query);
+            }, 300);
+        }
+        
+        function clearSearch() {
+            const searchInput = document.getElementById('search-input');
+            searchInput.value = '';
+            loadEpisodes();
         }
         
         function playEpisode(episode) {

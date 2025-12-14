@@ -52,14 +52,40 @@
                 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addPodcastModal">
                     <i class="bi bi-plus-circle"></i> Добавить подкаст
                 </button>
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="search-podcasts-input" 
+                           placeholder="Поиск подкастов..." 
+                           onkeyup="handlePodcastSearch(event)">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearPodcastSearch()">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </div>
                 <div id="podcasts-list"></div>
+                <div id="podcasts-no-results" class="text-center text-muted" style="display: none;">
+                    <i class="bi bi-search" style="font-size: 2rem;"></i>
+                    <p class="mt-2">Подкасты не найдены</p>
+                </div>
             </div>
             <div class="col-md-6">
                 <h3>Управление эпизодами</h3>
                 <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addEpisodeModal">
                     <i class="bi bi-plus-circle"></i> Добавить эпизод
                 </button>
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="search-episodes-input" 
+                           placeholder="Поиск эпизодов..." 
+                           onkeyup="handleEpisodeSearch(event)">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearEpisodeSearch()">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </div>
                 <div id="episodes-list"></div>
+                <div id="episodes-no-results" class="text-center text-muted" style="display: none;">
+                    <i class="bi bi-search" style="font-size: 2rem;"></i>
+                    <p class="mt-2">Эпизоды не найдены</p>
+                </div>
             </div>
         </div>
     </div>
@@ -128,8 +154,79 @@
         </div>
     </div>
 
+    <div class="modal fade" id="editPodcastModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редактировать подкаст</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-podcast-form">
+                        <input type="hidden" name="id" id="edit-podcast-id">
+                        <div class="mb-3">
+                            <label class="form-label">Название</label>
+                            <input type="text" class="form-control" name="title" id="edit-podcast-title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" name="description" id="edit-podcast-description" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Автор</label>
+                            <input type="text" class="form-control" name="author" id="edit-podcast-author">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="editEpisodeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редактировать эпизод</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-episode-form">
+                        <input type="hidden" name="id" id="edit-episode-id">
+                        <div class="mb-3">
+                            <label class="form-label">Подкаст</label>
+                            <select class="form-control" name="podcast_id" id="edit-episode-podcast-select" required></select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Название</label>
+                            <input type="text" class="form-control" name="title" id="edit-episode-title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" name="description" id="edit-episode-description" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">URL аудио файла</label>
+                            <input type="text" class="form-control" name="audio_file" id="edit-episode-audio-file" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Номер эпизода</label>
+                            <input type="number" class="form-control" name="episode_number" id="edit-episode-number" value="1">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let podcastSearchTimeout;
+        let episodeSearchTimeout;
+        let allPodcasts = [];
+        let allEpisodes = [];
+        
         async function checkAuth() {
             const isLoggedIn = sessionStorage.getItem('admin_logged_in');
             if (isLoggedIn === 'true') {
@@ -146,6 +243,7 @@
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ username, password })
                 });
 
@@ -169,30 +267,23 @@
             loadEpisodes();
         }
 
-        async function loadPodcasts() {
+        async function loadPodcasts(searchQuery = '') {
             try {
-                const response = await fetch('/api/podcasts');
-                const podcasts = await response.json();
+                let response;
+                if (searchQuery) {
+                    response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&type=podcasts`);
+                    const data = await response.json();
+                    allPodcasts = data.podcasts || [];
+                } else {
+                    response = await fetch('/api/podcasts');
+                    allPodcasts = await response.json();
+                }
                 
-                const container = document.getElementById('podcasts-list');
-                container.innerHTML = '';
+                displayPodcasts(allPodcasts);
                 
-                podcasts.forEach(podcast => {
-                    const div = document.createElement('div');
-                    div.className = 'card mb-2';
-                    div.innerHTML = `
-                        <div class="card-body">
-                            <h5>${podcast.title}</h5>
-                            <p class="text-muted">${podcast.description || 'Нет описания'}</p>
-                            <button class="btn btn-sm btn-danger" onclick="deletePodcast(${podcast.id})">Удалить</button>
-                        </div>
-                    `;
-                    container.appendChild(div);
-                });
-
                 const select = document.getElementById('podcast-select');
                 select.innerHTML = '<option value="">Выберите подкаст</option>';
-                podcasts.forEach(podcast => {
+                allPodcasts.forEach(podcast => {
                     const option = document.createElement('option');
                     option.value = podcast.id;
                     option.textContent = podcast.title;
@@ -202,14 +293,69 @@
                 console.error('Ошибка загрузки подкастов:', error);
             }
         }
-
-        async function loadEpisodes() {
-            try {
-                const response = await fetch('/api/episodes');
-                const episodes = await response.json();
+        
+        function displayPodcasts(podcasts) {
+            const container = document.getElementById('podcasts-list');
+            const noResults = document.getElementById('podcasts-no-results');
+            container.innerHTML = '';
+            
+            if (podcasts.length === 0) {
+                container.style.display = 'none';
+                noResults.style.display = 'block';
+            } else {
+                container.style.display = 'block';
+                noResults.style.display = 'none';
                 
-                const container = document.getElementById('episodes-list');
-                container.innerHTML = '';
+                podcasts.forEach(podcast => {
+                    const div = document.createElement('div');
+                    div.className = 'card mb-2';
+                    div.innerHTML = `
+                        <div class="card-body">
+                            <h5>${podcast.title}</h5>
+                            <p class="text-muted">${podcast.description || 'Нет описания'}</p>
+                            <p class="text-muted small">Автор: ${podcast.author || 'Неизвестен'}</p>
+                            <button class="btn btn-sm btn-primary me-2" onclick="editPodcast(${podcast.id})">
+                                <i class="bi bi-pencil"></i> Редактировать
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deletePodcast(${podcast.id})">
+                                <i class="bi bi-trash"></i> Удалить
+                            </button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+        }
+
+        async function loadEpisodes(searchQuery = '') {
+            try {
+                let response;
+                if (searchQuery) {
+                    response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&type=episodes`);
+                    const data = await response.json();
+                    allEpisodes = data.episodes || [];
+                } else {
+                    response = await fetch('/api/episodes');
+                    allEpisodes = await response.json();
+                }
+                
+                displayEpisodes(allEpisodes);
+            } catch (error) {
+                console.error('Ошибка загрузки эпизодов:', error);
+            }
+        }
+        
+        function displayEpisodes(episodes) {
+            const container = document.getElementById('episodes-list');
+            const noResults = document.getElementById('episodes-no-results');
+            container.innerHTML = '';
+            
+            if (episodes.length === 0) {
+                container.style.display = 'none';
+                noResults.style.display = 'block';
+            } else {
+                container.style.display = 'block';
+                noResults.style.display = 'none';
                 
                 episodes.forEach(episode => {
                     const div = document.createElement('div');
@@ -217,15 +363,47 @@
                     div.innerHTML = `
                         <div class="card-body">
                             <h5>${episode.title}</h5>
-                            <p class="text-muted">${episode.podcast_title}</p>
-                            <button class="btn btn-sm btn-danger" onclick="deleteEpisode(${episode.id})">Удалить</button>
+                            <p class="text-muted">Подкаст: ${episode.podcast_title}</p>
+                            <p class="text-muted small">${episode.description || 'Нет описания'}</p>
+                            <button class="btn btn-sm btn-primary me-2" onclick="editEpisode(${episode.id})">
+                                <i class="bi bi-pencil"></i> Редактировать
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteEpisode(${episode.id})">
+                                <i class="bi bi-trash"></i> Удалить
+                            </button>
                         </div>
                     `;
                     container.appendChild(div);
                 });
-            } catch (error) {
-                console.error('Ошибка загрузки эпизодов:', error);
             }
+        }
+        
+        function handlePodcastSearch(event) {
+            clearTimeout(podcastSearchTimeout);
+            const query = event.target.value.trim();
+            
+            podcastSearchTimeout = setTimeout(() => {
+                loadPodcasts(query);
+            }, 300);
+        }
+        
+        function clearPodcastSearch() {
+            document.getElementById('search-podcasts-input').value = '';
+            loadPodcasts();
+        }
+        
+        function handleEpisodeSearch(event) {
+            clearTimeout(episodeSearchTimeout);
+            const query = event.target.value.trim();
+            
+            episodeSearchTimeout = setTimeout(() => {
+                loadEpisodes(query);
+            }, 300);
+        }
+        
+        function clearEpisodeSearch() {
+            document.getElementById('search-episodes-input').value = '';
+            loadEpisodes();
         }
 
         document.getElementById('add-podcast-form').addEventListener('submit', async (e) => {
@@ -237,6 +415,7 @@
                 const response = await fetch('/api/podcasts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify(data)
                 });
 
@@ -261,6 +440,7 @@
                 const response = await fetch('/api/episodes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify(data)
                 });
 
@@ -277,7 +457,10 @@
         async function deletePodcast(id) {
             if (confirm('Удалить подкаст?')) {
                 try {
-                    await fetch(`/api/podcasts/${id}`, { method: 'DELETE' });
+                    await fetch(`/api/podcasts/${id}`, { 
+                        method: 'DELETE',
+                        credentials: 'include'
+                    });
                     loadPodcasts();
                     loadEpisodes();
                 } catch (error) {
@@ -289,13 +472,138 @@
         async function deleteEpisode(id) {
             if (confirm('Удалить эпизод?')) {
                 try {
-                    await fetch(`/api/episodes/${id}`, { method: 'DELETE' });
+                    await fetch(`/api/episodes/${id}`, { 
+                        method: 'DELETE',
+                        credentials: 'include'
+                    });
                     loadEpisodes();
                 } catch (error) {
                     console.error('Ошибка:', error);
                 }
             }
         }
+
+        async function editPodcast(id) {
+            try {
+                const response = await fetch(`/api/podcasts/${id}`);
+                const podcast = await response.json();
+                
+                if (podcast) {
+                    document.getElementById('edit-podcast-id').value = podcast.id;
+                    document.getElementById('edit-podcast-title').value = podcast.title || '';
+                    document.getElementById('edit-podcast-description').value = podcast.description || '';
+                    document.getElementById('edit-podcast-author').value = podcast.author || '';
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('editPodcastModal'));
+                    modal.show();
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки подкаста:', error);
+            }
+        }
+
+        async function editEpisode(id) {
+            try {
+                const episodesResponse = await fetch('/api/episodes');
+                const allEpisodes = await episodesResponse.json();
+                const episode = allEpisodes.find(e => e.id == id);
+                
+                if (episode) {
+                    document.getElementById('edit-episode-id').value = episode.id;
+                    document.getElementById('edit-episode-title').value = episode.title || '';
+                    document.getElementById('edit-episode-description').value = episode.description || '';
+                    document.getElementById('edit-episode-audio-file').value = episode.audio_file || '';
+                    document.getElementById('edit-episode-number').value = episode.episode_number || 1;
+                    
+                    const select = document.getElementById('edit-episode-podcast-select');
+                    select.innerHTML = '<option value="">Выберите подкаст</option>';
+                    allPodcasts.forEach(podcast => {
+                        const option = document.createElement('option');
+                        option.value = podcast.id;
+                        option.textContent = podcast.title;
+                        option.selected = (podcast.id == episode.podcast_id);
+                        select.appendChild(option);
+                    });
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('editEpisodeModal'));
+                    modal.show();
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки эпизода:', error);
+            }
+        }
+
+        document.getElementById('edit-podcast-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            const id = data.id;
+
+            try {
+                const response = await fetch(`/api/podcasts/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        title: data.title,
+                        description: data.description,
+                        author: data.author
+                    })
+                });
+
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editPodcastModal')).hide();
+                    e.target.reset();
+                    document.getElementById('search-podcasts-input').value = '';
+                    loadPodcasts();
+                } else {
+                    alert('Ошибка при сохранении: ' + (result.error || 'Неизвестная ошибка'));
+                    console.error('Ошибка:', result);
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('Ошибка при сохранении подкаста');
+            }
+        });
+
+        document.getElementById('edit-episode-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            const id = data.id;
+            data.podcast_id = parseInt(data.podcast_id);
+            data.episode_number = parseInt(data.episode_number);
+
+            try {
+                const response = await fetch(`/api/episodes/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        podcast_id: data.podcast_id,
+                        title: data.title,
+                        description: data.description,
+                        audio_file: data.audio_file,
+                        episode_number: data.episode_number
+                    })
+                });
+
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('editEpisodeModal')).hide();
+                    e.target.reset();
+                    document.getElementById('search-episodes-input').value = '';
+                    loadEpisodes();
+                } else {
+                    alert('Ошибка при сохранении: ' + (result.error || 'Неизвестная ошибка'));
+                    console.error('Ошибка:', result);
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                alert('Ошибка при сохранении эпизода');
+            }
+        });
 
         checkAuth();
     </script>

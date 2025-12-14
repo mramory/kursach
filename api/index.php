@@ -1,6 +1,12 @@
 <?php
+ini_set('session.cookie_httponly', 1);
+ini_set('session.use_only_cookies', 1);
+ini_set('session.cookie_samesite', 'Lax');
+
 session_start();
 header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Allow-Origin: ' . ($_SERVER['HTTP_ORIGIN'] ?? '*'));
 require_once '../config/database.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -40,6 +46,53 @@ switch ($method) {
                                   ORDER BY e.published_at DESC");
             $episodes = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode($episodes);
+        } elseif (preg_match('/^search\/episodes\/(\d+)$/', $path, $matches)) {
+            $podcast_id = $matches[1];
+            $query = $_GET['q'] ?? '';
+            
+            if (empty($query)) {
+                $stmt = $conn->prepare("SELECT * FROM episodes WHERE podcast_id = ? ORDER BY episode_number ASC");
+                $stmt->execute([$podcast_id]);
+            } else {
+                $searchTerm = '%' . $query . '%';
+                $stmt = $conn->prepare("SELECT * FROM episodes 
+                                       WHERE podcast_id = ? AND (title LIKE ? OR description LIKE ?) 
+                                       ORDER BY episode_number ASC");
+                $stmt->execute([$podcast_id, $searchTerm, $searchTerm]);
+            }
+            
+            $episodes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode($episodes);
+        } elseif ($path === 'search') {
+            $query = $_GET['q'] ?? '';
+            $type = $_GET['type'] ?? 'all';
+            
+            if (empty($query)) {
+                echo json_encode(['podcasts' => [], 'episodes' => []]);
+                break;
+            }
+            
+            $searchTerm = '%' . $query . '%';
+            $results = ['podcasts' => [], 'episodes' => []];
+            
+            if ($type === 'all' || $type === 'podcasts') {
+                $stmt = $conn->prepare("SELECT * FROM podcasts 
+                                       WHERE title LIKE ? OR description LIKE ? OR author LIKE ? 
+                                       ORDER BY created_at DESC");
+                $stmt->execute([$searchTerm, $searchTerm, $searchTerm]);
+                $results['podcasts'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            if ($type === 'all' || $type === 'episodes') {
+                $stmt = $conn->prepare("SELECT e.*, p.title as podcast_title FROM episodes e 
+                                       JOIN podcasts p ON e.podcast_id = p.id 
+                                       WHERE e.title LIKE ? OR e.description LIKE ? 
+                                       ORDER BY e.published_at DESC");
+                $stmt->execute([$searchTerm, $searchTerm]);
+                $results['episodes'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            echo json_encode($results);
         }
         break;
         
@@ -67,6 +120,14 @@ switch ($method) {
             
             if (password_verify($password, $user['password'])) {
                 $_SESSION['admin'] = true;
+                if (session_id()) {
+                    setcookie(session_name(), session_id(), [
+                        'expires' => time() + 3600,
+                        'path' => '/',
+                        'samesite' => 'Lax',
+                        'httponly' => true
+                    ]);
+                }
                 echo json_encode(['success' => true]);
             } else {
                 http_response_code(401);
@@ -89,6 +150,64 @@ switch ($method) {
                 $data['episode_number'] ?? 0
             ]);
             echo json_encode(['success' => true, 'id' => $conn->lastInsertId()]);
+        }
+        break;
+        
+    case 'PUT':
+        if (!isset($_SESSION['admin'])) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'Unauthorized - Session not set']);
+            break;
+        }
+        
+        if (preg_match('/^podcasts\/(\d+)$/', $path, $matches)) {
+            $podcast_id = $matches[1];
+            $input = file_get_contents('php://input');
+            $data = json_decode($input, true);
+            
+            if (!$data) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Invalid JSON data']);
+                break;
+            }
+            
+            try {
+                $stmt = $conn->prepare("UPDATE podcasts SET title = ?, description = ?, author = ? WHERE id = ?");
+                $stmt->execute([$data['title'], $data['description'], $data['author'], $podcast_id]);
+                echo json_encode(['success' => true]);
+            } catch (PDOException $e) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+        } elseif (preg_match('/^episodes\/(\d+)$/', $path, $matches)) {
+            $episode_id = $matches[1];
+            $input = file_get_contents('php://input');
+            $data = json_decode($input, true);
+            
+            if (!$data) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'Invalid JSON data']);
+                break;
+            }
+            
+            try {
+                $stmt = $conn->prepare("UPDATE episodes SET podcast_id = ?, title = ?, description = ?, audio_file = ?, episode_number = ? WHERE id = ?");
+                $stmt->execute([
+                    $data['podcast_id'], 
+                    $data['title'], 
+                    $data['description'], 
+                    $data['audio_file'], 
+                    $data['episode_number'] ?? 0,
+                    $episode_id
+                ]);
+                echo json_encode(['success' => true]);
+            } catch (PDOException $e) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            }
+        } else {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'Not found']);
         }
         break;
         

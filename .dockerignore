@@ -4,6 +4,17 @@ README.md
 DEPLOY.md
 *.md
 .env
+.env.local
 .DS_Store
 Thumbs.db
+*.log
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+node_modules/
+deploy.sh
+docker-compose.prod.yml
+render.yaml
 

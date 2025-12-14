@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: podcast-service
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DB_HOST
+        value: db
+      - key: DB_NAME
+        value: podcast_db
+      - key: DB_USER
+        value: podcast_user
+      - key: DB_PASSWORD
+        generateValue: true
+    healthCheckPath: /
+

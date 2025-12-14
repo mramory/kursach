@@ -24,10 +24,8 @@ services:
   php:
     build: .
     container_name: podcast_php
-    volumes:
-      - ./:/var/www/html
     ports:
-      - "8080:80"
+      - "80:80"
     depends_on:
       db:
         condition: service_healthy

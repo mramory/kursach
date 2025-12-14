@@ -16,9 +16,12 @@ class Database {
     public function getConnection() {
         $this->conn = null;
         
+        $port = getenv('DB_PORT') ?: '3306';
+        $dsn = "mysql:host=" . $this->host . ";port=" . $port . ";dbname=" . $this->db_name . ";charset=utf8mb4";
+        
         try {
             $this->conn = new PDO(
-                "mysql:host=" . $this->host . ";dbname=" . $this->db_name . ";charset=utf8mb4",
+                $dsn,
                 $this->username,
                 $this->password,
                 [
